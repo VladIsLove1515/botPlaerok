@@ -1,0 +1,164 @@
+from aiogram import F, Router
+from aiogram.types import CallbackQuery
+from aiogram.fsm.context import FSMContext
+
+from playerokapi.enums import PriorityTypes
+from settings import Settings as sett
+
+from .. import templates as templ
+from .. import callback_datas as calls
+from .. import states as states
+from ..helpful import throw_float_message, require_state_item
+from .navigation import *
+
+
+router = Router()
+
+
+@router.callback_query(F.data == "confirm_bump_items")
+async def callback_confirm_bump_items(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(None)
+    config = sett.get("config")
+    scope = (
+        "все ваши товары, кроме тех, что указаны в исключенных"
+        if config["playerok"]["auto_bump_items"]["all"]
+        else "только те товары, которые вы добавили во включенные"
+    )
+    await throw_float_message(
+        state=state,
+        message=callback.message,
+        text=templ.bump_float_text(
+            "✔️ Подтвердите <b>поднятие товаров</b>:"
+            f"\n\n<blockquote>⚠️ Будут подняты <b>{scope}</b> — сразу и без учёта позиции, "
+            "даже если товар уже в топе. За каждое поднятие списываются деньги.</blockquote>"
+        ),
+        reply_markup=templ.confirm_kb("bump_items", calls.MenuNavigation(to="bump").pack())
+    )
+
+
+@router.callback_query(F.data == "confirm_withdrawal")
+async def callback_confirm_withdrawal(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(None)
+    await throw_float_message(
+        state=state,
+        message=callback.message, 
+        text=templ.withdrawal_float_text("✔️ Подтвердите <b>вывод средств</b>:"), 
+        reply_markup=templ.confirm_kb("request_withdrawal", calls.MenuNavigation(to="withdrawal").pack())
+    )
+
+
+@router.callback_query(calls.ConfirmPublishItem.filter())
+async def callback_confirm_publish_item(callback: CallbackQuery, callback_data: calls.ConfirmPublishItem, state: FSMContext):
+    data = await state.get_data()
+    try:
+        await state.set_state(None)
+
+        item = require_state_item(data)
+        statuses = data.get("item_pr_statuses") or []
+
+        status_id = callback_data.st_id
+        await state.update_data(item_pr_status_id=status_id)
+
+        status = next((st for st in statuses if st.id == status_id), None)
+        if not status:
+            raise Exception("❌ Меню устарело после перезапуска бота — откройте страницу товара заново")
+        status_str = "Бесплатный" if status.price == 0 else "Премиум"
+
+        await throw_float_message(
+            state=state,
+            message=callback.message, 
+            text=templ.item_float_text(
+                "✔️ Подтвердите <b>публикацию товара</b>:"
+                f"\n\n・ <b>Товар:</b> {item.name}"
+                f"\n・ <b>Приоритет:</b> {status_str}"
+            ), 
+            reply_markup=templ.confirm_kb(
+                confirm_cb=calls.PublishItem(id=item.id).pack(), 
+                cancel_cb=calls.ItemPage(id=item.id).pack()
+            )
+        )
+    except Exception as e:
+        await throw_float_message(
+            state=state,
+            message=callback.message,
+            text=templ.item_float_text(e),
+            reply_markup=templ.back_kb(calls.ItemsPagination(page=data.get("last_page", 0)).pack()),
+            callback=callback
+        )
+
+
+@router.callback_query(F.data == "confirm_raise_item")
+async def callback_confirm_raise_item(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    try:
+        await state.set_state(None)
+
+        item = require_state_item(data)
+
+        from plbot.playerokbot import get_playerok_bot as plbot
+        pr_statuses = plbot().account.get_item_priority_statuses(item.id, item.raw_price)
+        
+        prem_st = next((st for st in pr_statuses if st.price > 0), None)
+        if not prem_st:
+            raise Exception("❌ Playerok не вернул премиум статус для этого товара")
+        await state.update_data(item_pr_status_id=prem_st.id)
+
+        if item.priority == PriorityTypes.DEFAULT:
+            text = (
+                "✔️ Подтвердите <b>повышение приоритета</b>:"
+                f"\n\n・ <b>Товар:</b> {item.name}"
+                f"\n・ <b>Приоритет:</b> Премиум ({prem_st.price}₽)"
+            )
+        else:
+            text = (
+                "✔️ Подтвердите <b>поднятие товара</b>:"
+                f"\n\n・ <b>Товар:</b> {item.name}"
+                f"\n・ <b>Стоимость:</b> {prem_st.price}₽"
+            )
+
+        await throw_float_message(
+            state=state,
+            message=callback.message, 
+            text=templ.item_float_text(text), 
+            reply_markup=templ.confirm_kb(
+                calls.IncreaseItemPriority(id=item.id).pack(), 
+                calls.ItemPage(id=item.id).pack()
+            )
+        )
+    except Exception as e:
+        await throw_float_message(
+            state=state,
+            message=callback.message,
+            text=templ.item_float_text(e),
+            reply_markup=templ.back_kb(calls.ItemsPagination(page=data.get("last_page", 0)).pack()),
+            callback=callback
+        )
+
+@router.callback_query(F.data == "confirm_delete_item")
+async def callback_confirm_delete_item(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    try:
+        await state.set_state(None)
+
+        item = require_state_item(data)
+
+        await throw_float_message(
+            state=state,
+            message=callback.message, 
+            text=templ.item_float_text(
+                "✔️ Подтвердите <b>удаление товара</b>:"
+                f"\n\n・ <b>Товар:</b> {item.name}"
+            ), 
+            reply_markup=templ.confirm_kb(
+                confirm_cb=calls.DeleteItem(id=item.id).pack(), 
+                cancel_cb=calls.ItemPage(id=item.id).pack()
+            )
+        )
+    except Exception as e:
+        await throw_float_message(
+            state=state,
+            message=callback.message,
+            text=templ.item_float_text(e),
+            reply_markup=templ.back_kb(calls.ItemsPagination(page=data.get("last_page", 0)).pack()),
+            callback=callback
+        )

@@ -1,0 +1,39 @@
+{
+    "included": [],
+    "excluded": [
+        {
+            "items": [
+                {
+                    "id": "1f1934d4-b1c5-6970-7c45-92136019e575",
+                    "slug": "92136019e575-ak-47-oligarh-nemnogo-ponoshennoe",
+                    "name": "AK-47 | Олигарх (Немного поношенное)"
+                },
+                {
+                    "id": "1f1d43ea-55e0-6820-0503-ab542d4d9f4e",
+                    "slug": "ab542d4d9f4e-telegram-premium-bez-vhoda-na-vash-akkaunt-na-30-dney",
+                    "name": "Telegram Premium / Без входа на Ваш аккаунт / На 30 дней"
+                },
+                {
+                    "id": "1f1d5fc1-5f0e-6620-fc50-3bc35314d4fa",
+                    "slug": "3bc35314d4fa-bez-pasporta-voys-chat-avtovydacha",
+                    "name": "💙 БЕЗ ПАСПОРТА 💙 ВОЙС ЧАТ 💙АВТОВЫДАЧА"
+                },
+                {
+                    "id": "1f1b75c8-b06d-60f0-5026-3e289bbb01a6",
+                    "slug": "3e289bbb01a6-telegram-premium-bez-vhoda-na-vash-akkaunt-na-30-dney",
+                    "name": "Telegram Premium / Без входа на Ваш аккаунт / На 30 дней"
+                },
+                {
+                    "id": "1f1d38d7-cf3f-6bd0-3592-273869372271",
+                    "slug": "273869372271-kazahstan-chistyy-akkaunt-avtovydacha-rodnaya-pochta",
+                    "name": "🟦 КАЗАХСТАН|ЧИСТЫЙ АККАУНТ💛 [💙АВТОВЫДАЧА💛][РОДНАЯ ПОЧТА]"
+                },
+                {
+                    "id": "1f1d439f-e172-64b0-35b9-ea8977777a68",
+                    "slug": "ea8977777a68-kazahstan-chistyy-akkaunt-avtovydacha-rodnaya-pochta",
+                    "name": "🟦 КАЗАХСТАН|ЧИСТЫЙ АККАУНТ💛 [💙АВТОВЫДАЧА💛][РОДНАЯ ПОЧТА]"
+                }
+            ]
+        }
+    ]
+}

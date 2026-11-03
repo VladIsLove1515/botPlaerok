@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playerok — пульт магазина</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <button class="brand" type="button" data-page="overview">
+      <span class="gem" aria-hidden="true"></span>
+      <span>
+        <strong>Playerok</strong>
+        <small>Пульт магазина</small>
+      </span>
+    </button>
+    <div class="finder">
+      <input id="settings-search" data-settings-search type="text" placeholder="Найти настройку" autocomplete="off" spellcheck="false" aria-label="Найти настройку" aria-controls="settings-results" aria-expanded="false">
+      <div id="settings-results" class="settings-results" hidden></div>
+    </div>
+    <div class="top-status" id="top-status">Загрузка</div>
+  </header>
+  <div class="shell">
+    <nav id="nav" aria-label="Разделы"></nav>
+    <main id="main">
+      <p class="muted">Открываю настройки…</p>
+    </main>
+  </div>
+  <div id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

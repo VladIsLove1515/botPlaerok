@@ -1,0 +1,47 @@
+from aiogram import types, Router, F
+from aiogram.fsm.context import FSMContext
+
+from settings import Settings as sett
+from utils import escape_html
+
+from .. import templates as templ
+from .. import states
+from .. import callback_datas as calls
+from ..helpful import throw_float_message
+
+
+router = Router()
+
+
+@router.message(states.MessagesStates.waiting_for_message_text, F.text)
+async def handler_waiting_for_message_text(message: types.Message, state: FSMContext):
+    try:
+        await state.set_state(None)
+        
+        data = await state.get_data()
+        message_id = data.get("message_id")
+        
+        if len(message.text) <= 0:
+            raise Exception("❌ Слишком короткий текст")
+
+        messages = sett.get("messages")
+        message_split_lines = message.text.split('\n')
+        messages[message_id]["text"] = message_split_lines
+        sett.set("messages", messages)
+        
+        await throw_float_message(
+            state=state,
+            message=message,
+            text=templ.mess_page_float_text(
+                f"✅ <b>Текст сообщения</b> «{sett.get_message_label(message_id)}» "
+                f"был успешно изменён на <blockquote>{escape_html(message.text)}</blockquote>"
+            ),
+            reply_markup=templ.back_kb(calls.MessagePage(message_id=message_id).pack())
+        )
+    except Exception as e:
+        await throw_float_message(
+            state=state,
+            message=message,
+            text=templ.mess_page_float_text(e), 
+            reply_markup=templ.back_kb(calls.MessagePage(message_id=message_id).pack())
+        )

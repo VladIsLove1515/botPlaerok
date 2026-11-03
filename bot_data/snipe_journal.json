@@ -1,0 +1,52 @@
+{
+    "entries": [
+        {
+            "at": "2026-11-03T16:01:39",
+            "event": "detected",
+            "competitor_name": "⚡100 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+            "my_name": "🚀120 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "Чужой лот перевыставлен. Свой «🚀120 Бустов Telegram🚀Быстрый BOO» поднимется через 60с",
+            "ok": true
+        },
+        {
+            "at": "2026-11-03T16:01:39",
+            "event": "detected",
+            "competitor_name": "⚡50 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+            "my_name": "🚀60 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "Чужой лот перевыставлен. Свой «🚀60 Бустов Telegram🚀Быстрый BOOS» поднимется через 60с",
+            "ok": true
+        },
+        {
+            "at": "2026-11-03T16:02:40",
+            "event": "raising",
+            "competitor_name": "⚡100 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+            "my_name": "🚀120 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "Пора поднимать свой лот после «⚡100 БУСТОВ TELEGRAM | МОМЕНТАЛЬ...»",
+            "ok": true
+        },
+        {
+            "at": "2026-11-03T16:02:45",
+            "event": "bumped",
+            "competitor_name": "",
+            "my_name": "🚀120 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "премиум поднят (−13₽) (перебив «⚡100 БУСТОВ TELEGRAM | МОМЕНТАЛЬ...»)",
+            "ok": true
+        },
+        {
+            "at": "2026-11-03T16:02:45",
+            "event": "raising",
+            "competitor_name": "⚡50 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+            "my_name": "🚀60 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "Пора поднимать свой лот после «⚡50 БУСТОВ TELEGRAM | МОМЕНТАЛЬН...»",
+            "ok": true
+        },
+        {
+            "at": "2026-11-03T16:02:48",
+            "event": "bumped",
+            "competitor_name": "",
+            "my_name": "🚀60 Бустов Telegram🚀Быстрый BOOST🚀",
+            "detail": "премиум поднят (−13₽) (перебив «⚡50 БУСТОВ TELEGRAM | МОМЕНТАЛЬН...»)",
+            "ok": true
+        }
+    ]
+}

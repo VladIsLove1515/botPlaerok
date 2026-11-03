@@ -1,0 +1,41 @@
+{
+    "cases": [
+        {
+            "id": "a8d5c355f48f",
+            "username": "Povstanik",
+            "chat_id": "1f1d7751-5347-61a0-1f7d-8c94604d8d8d",
+            "deal_id": "",
+            "item_id": "",
+            "item_name": "",
+            "created_at": "2026-11-03T14:04:37",
+            "updated_at": "2026-11-03T14:04:37",
+            "status": "open",
+            "issued_login": ""
+        },
+        {
+            "id": "e57c8c7320cd",
+            "username": "casua9mgi",
+            "chat_id": "1f1d5ff5-01f4-6780-e37d-72d598ec4ea3",
+            "deal_id": "",
+            "item_id": "",
+            "item_name": "",
+            "created_at": "2026-11-01T17:21:15",
+            "updated_at": "2026-11-01T17:21:15",
+            "status": "open",
+            "issued_login": ""
+        },
+        {
+            "id": "3b212bfba7ab",
+            "username": "TestBuyer",
+            "chat_id": "chat-test-1",
+            "deal_id": "",
+            "item_id": "",
+            "item_name": "",
+            "created_at": "2026-10-30T15:15:49",
+            "updated_at": "2026-10-30T15:15:49",
+            "status": "resolved",
+            "issued_login": ""
+        }
+    ],
+    "pending_gifts": []
+}

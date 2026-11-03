@@ -1,0 +1,1003 @@
+import os
+import json
+import glob
+import time
+import pytz
+import re
+import sys
+import base64
+import string
+import requests
+from urllib.parse import urlparse, unquote, quote
+from logging import getLogger
+from colorama import Fore
+from datetime import datetime, timedelta, timezone
+from collections import Counter
+
+from playerokapi.account import Account
+from playerokapi.exceptions import BotCheckDetectedException
+
+from settings import Settings as sett, set_json
+from data import Data as data
+
+
+logger = getLogger("universal")
+
+
+def strip_html(text):
+    return re.sub(r'<[^>]+>', '', text or '')
+
+
+def escape_html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def parse_date(date_str: str) -> datetime | None:
+    formats = [
+        "%d.%m.%Y",
+        "%d.%m.%y",
+        "%-d.%-m.%Y",
+        "%-d.%-m.%y",
+        "%-d.%m.%Y",
+        "%-d.%m.%y",
+        "%d.%-m.%Y",
+        "%d.%-m.%y",
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def get_event_next_time(last_time_iso, interval):
+    return (
+        datetime.fromisoformat(last_time_iso) + timedelta(seconds=interval)
+        if last_time_iso else datetime.now()
+    )
+
+
+def parse_day_time(text: str) -> str | None:
+    text = (text or "").strip()
+
+    match = re.fullmatch(r"(\d{1,2})\s*[:.,\-]\s*(\d{1,2})", text)
+    if match:
+        hours, minutes = int(match.group(1)), int(match.group(2))
+    elif text.isdigit() and len(text) in (3, 4):
+        hours, minutes = int(text[:-2]), int(text[-2:])
+    elif text.isdigit() and len(text) <= 2:
+        hours, minutes = int(text), 0
+    else:
+        return None
+
+    if hours > 23 or minutes > 59:
+        return None
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def is_night_time(time_from: str, time_to: str, now: datetime | None = None) -> bool:
+    start = parse_day_time(time_from)
+    end = parse_day_time(time_to)
+    if not start or not end or start == end:
+        return False
+
+    current = (now or datetime.now()).strftime("%H:%M")
+    if start < end:
+        return start <= current < end
+    return current >= start or current < end
+
+
+def get_next_day_time(time_str: str, now: datetime | None = None) -> datetime | None:
+    parsed = parse_day_time(time_str)
+    if not parsed:
+        return None
+
+    now = now or datetime.now()
+    hours, minutes = (int(part) for part in parsed.split(":"))
+    next_time = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+    if next_time <= now:
+        next_time += timedelta(days=1)
+    return next_time
+
+
+def is_bump_night_now(config: dict, now: datetime | None = None) -> bool:
+    night = config["playerok"]["auto_bump_items"]["night"]
+    return bool(night["enabled"]) and is_night_time(night["time_from"], night["time_to"], now)
+
+
+def get_current_bump_interval(config: dict, now: datetime | None = None) -> int:
+    if is_bump_night_now(config, now):
+        return config["playerok"]["auto_bump_items"]["night"]["interval"] or 0
+    return config["playerok"]["auto_bump_items"]["interval"] or 0
+
+
+def get_current_bump_position(config: dict, now: datetime | None = None) -> int:
+    if is_bump_night_now(config, now):
+        return config["playerok"]["auto_bump_items"]["night"]["position"] or 0
+    return config["playerok"]["auto_bump_items"]["position"] or 0
+
+
+def get_bump_next_switch(config: dict, now: datetime) -> datetime | None:
+    night = config["playerok"]["auto_bump_items"]["night"]
+    if not night["enabled"]:
+        return None
+
+    if is_bump_night_now(config, now):
+        return get_next_day_time(night["time_to"], now)
+    return get_next_day_time(night["time_from"], now)
+
+
+def get_bump_next_time(config: dict, last_time_iso: str, now: datetime | None = None) -> datetime | None:
+    now = now or datetime.now()
+    last_time = datetime.fromisoformat(last_time_iso) if last_time_iso else datetime.min
+
+    cursor = now
+    for _ in range(1000):
+        interval = get_current_bump_interval(config, cursor)
+        due = max(last_time + timedelta(seconds=interval), cursor) if interval else None
+        switch = get_bump_next_switch(config, cursor)
+
+        if due and (not switch or due < switch):
+            return due
+        if not switch:
+            return None
+        cursor = switch
+    return None
+
+
+def get_tg_log_chats():
+    config = sett.get("config")
+    chat_id = config["playerok"]["notifications"]["chat_id"]
+
+    if not chat_id:
+        return config["telegram"]["bot"]["signed_users"]
+    else:
+        return [chat_id]
+
+
+def github_str_to_dt(date_str: str) -> datetime:
+    return datetime.fromisoformat(
+        date_str.replace("Z", "+00:00")
+    ).replace(tzinfo=timezone.utc).astimezone(
+        pytz.timezone("Europe/Moscow")
+    )
+
+
+def is_cookies_valid(cookie_str: str) -> bool:
+    if not cookie_str or "=" not in cookie_str:
+        return False
+
+    parts = cookie_str.split(";")
+
+    for part in parts:
+        part = part.strip()
+        if "=" not in part:
+            return False
+
+        key, value = part.split("=", 1)
+
+        if not key or not value:
+            return False
+
+    return True
+
+
+def is_token_valid(token: str) -> bool:
+    if not re.match(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$", token):
+        return False
+    try:
+        header, payload, signature = token.split('.')
+        for part in (header, payload, signature):
+            padding = '=' * (-len(part) % 4)
+            base64.urlsafe_b64decode(part + padding)
+        return True
+    except Exception:
+        return False
+
+
+def is_pl_account_working() -> tuple[bool, str]:
+    try:
+        config = sett.get("config")
+        Account(
+            cookies=config["playerok"]["api"]["cookies"],
+            user_agent=config["playerok"]["api"]["user_agent"],
+            requests_timeout=config["playerok"]["api"]["requests_timeout"],
+            proxy=config["playerok"]["api"]["proxy"] or None
+        ).get()
+        return True, ""
+    except BotCheckDetectedException:
+        return False, "Бот-проверка заметила подозрительную активность при подключении к аккаунту Playerok. Чтобы продолжить работу, вам нужно указать актуальные Cookie-данные вашего авторизованного Playerok аккаунта."
+    except:
+        return False, ""
+
+
+def is_pl_account_banned() -> bool:
+    try:
+        config = sett.get("config")
+        acc = Account(
+            cookies=config["playerok"]["api"]["cookies"],
+            user_agent=config["playerok"]["api"]["user_agent"],
+            requests_timeout=config["playerok"]["api"]["requests_timeout"],
+            proxy=config["playerok"]["api"]["proxy"] or None
+        ).get()
+        return acc.profile.is_blocked
+    except:
+        return False
+
+
+def is_user_agent_valid(ua: str) -> bool:
+    if not ua or not (10 <= len(ua) <= 512):
+        return False
+    allowed_chars = string.ascii_letters + string.digits + string.punctuation + ' '
+    return all(c in allowed_chars for c in ua)
+
+
+def is_proxy_valid(proxy: str) -> bool:
+    ip_pattern = r'(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)'
+    pattern_ip_port = re.compile(
+        rf'^{ip_pattern}\.{ip_pattern}\.{ip_pattern}\.{ip_pattern}:(\d+)$'
+    )
+    pattern_auth_ip_port = re.compile(
+        rf'^[^:@]+:[^:@]+@{ip_pattern}\.{ip_pattern}\.{ip_pattern}\.{ip_pattern}:(\d+)$'
+    )
+    match = pattern_ip_port.match(proxy)
+    if match:
+        port = int(match.group(1))
+        return 1 <= port <= 65535
+    match = pattern_auth_ip_port.match(proxy)
+    if match:
+        port = int(match.group(1))
+        return 1 <= port <= 65535
+    return False
+
+
+def is_proxy_working(proxy: str, test_url="https://playerok.com", timeout=30) -> bool:
+    proxies = {
+        "http": f"http://{proxy}",
+        "https": f"http://{proxy}"
+    }
+    try:
+        response = requests.get(test_url, proxies=proxies, timeout=timeout)
+        return response.status_code < 404
+    except Exception:
+        return False
+
+
+def is_tg_token_valid(token: str) -> bool:
+    pattern = r'^\d{7,12}:[A-Za-z0-9_-]{35}$'
+    return bool(re.match(pattern, token))
+
+
+def is_url_valid(url):
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc])
+    except Exception:
+        return False
+
+
+def normalize_custom_api_url(cust_api_url: str) -> str:
+    if not (
+        cust_api_url.startswith("http://")
+        or cust_api_url.startswith("https://")
+    ):
+        cust_api_url = "https://" + cust_api_url
+    return cust_api_url.rstrip("/")
+
+
+def is_custom_api_url_working(cust_api_url: str) -> bool:
+    try:
+        config = sett.get("config")
+        token = config["telegram"]["api"]["token"]
+        proxy = config["telegram"]["api"]["proxy"]
+
+        if proxy:
+            proxies = {
+                "http": f"http://{proxy}",
+                "https": f"http://{proxy}",
+            }
+        else:
+            proxies = None
+
+        response = requests.get(
+            f"{normalize_custom_api_url(cust_api_url)}/bot{token}/getMe",
+            proxies=proxies,
+            timeout=30
+        )
+
+        data = response.json()
+        return data.get("ok", False) is True and data.get("result", {}).get("is_bot", False) is True
+    except Exception:
+        return False
+
+
+def is_tg_bot_exists() -> bool:
+    try:
+        config = sett.get("config")
+        token = config["telegram"]["api"]["token"]
+        proxy = config["telegram"]["api"]["proxy"]
+        custom_api_url = config["telegram"]["api"]["custom_api_url"]
+
+        if custom_api_url:
+            custom_api_url = normalize_custom_api_url(custom_api_url)
+
+        tg_bot_api_url = (
+            custom_api_url
+            if custom_api_url
+            else "https://api.telegram.org"
+        )
+
+        if proxy:
+            proxies = {
+                "http": f"http://{proxy}",
+                "https": f"http://{proxy}",
+            }
+        else:
+            proxies = None
+
+        response = requests.get(
+            f"{tg_bot_api_url}/bot{token}/getMe",
+            proxies=proxies,
+            timeout=30
+        )
+        
+        data = response.json()
+        return data.get("ok", False) is True and data.get("result", {}).get("is_bot", False) is True
+    except Exception:
+        return False
+    
+
+def is_password_valid(password: str) -> bool:
+    if len(password) < 6 or len(password) > 64:
+        return False
+    common_passwords = {
+        "123456", "1234567", "12345678", "123456789", "password", "qwerty",
+        "admin", "123123", "111111", "abc123", "letmein", "welcome",
+        "monkey", "login", "root", "pass", "test", "000000", "user",
+        "qwerty123", "iloveyou"
+    }
+    if password.lower() in common_passwords:
+        return False
+    return True
+
+
+ITEM_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+ITEM_SLUG_RE = re.compile(r"^[^\s/\\]{1,200}$")
+ITEM_REFS_LIMIT = 50
+ITEM_REFS_DELAY = 0.34
+BINDING_SETTINGS = (
+    "auto_deliveries",
+    "data_replacement",
+    "auto_bump_items",
+    "auto_restore_items",
+    "auto_complete_deals",
+    "account_stock"
+)
+MODULES_DIRS = ("modules", "modules_off", "modules_clients")
+
+
+def parse_item_ref(text: str) -> tuple[str, str]:
+    ref = (text or "").strip()
+    if not ref:
+        raise Exception("пустая строка")
+
+    if "/" in ref or "playerok.com" in ref.lower():
+        parsed = urlparse(ref if "://" in ref else f"https://{ref}")
+        host = (parsed.netloc or "").split("@")[-1].split(":")[0].lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if host != "playerok.com":
+            raise Exception("ссылка не с playerok.com")
+
+        parts = [part for part in (parsed.path or "").split("/") if part]
+        if len(parts) < 2 or parts[-2] not in ("products", "product"):
+            raise Exception("в ссылке нет пути /products/")
+        ref = unquote(parts[-1])
+
+    if ITEM_UUID_RE.match(ref):
+        return "id", ref.lower()
+    if ITEM_SLUG_RE.match(ref):
+        return "slug", ref
+    raise Exception("не похоже ни на ссылку, ни на slug, ни на ID")
+
+
+def resolve_item_ref(account: Account, text: str) -> dict:
+    kind, value = parse_item_ref(text)
+
+    try:
+        item = account.get_item(**{kind: value})
+    except Exception as e:
+        raise Exception(f"не удалось получить товар ({e})")
+    if not item:
+        raise Exception("товар не найден")
+
+    owner_id = getattr(getattr(item, "user", None), "id", None)
+    if not owner_id or not account.id:
+        raise Exception("не удалось определить владельца товара")
+    if owner_id != account.id:
+        raise Exception("это не ваш товар")
+
+    return {
+        "id": item.id,
+        "slug": item.slug,
+        "name": item.name or item.slug or item.id
+    }
+
+
+def resolve_item_refs(
+    account: Account,
+    lines: list[str],
+    limit: int = ITEM_REFS_LIMIT,
+    delay: float = ITEM_REFS_DELAY
+) -> tuple[list[dict], list[str]]:
+    refs = [line.strip() for line in (lines or []) if line.strip()]
+    if not refs:
+        raise Exception("❌ Не удалось извлечь ни одной ссылки на товар")
+    if len(refs) > limit:
+        raise Exception(f"❌ За один раз можно добавить не больше <b>{limit}</b> товаров")
+
+    resolved, errors = [], []
+    for i, ref in enumerate(refs):
+        if i:
+            time.sleep(delay)
+        try:
+            item = resolve_item_ref(account, ref)
+        except Exception as e:
+            errors.append(f"{escape_html(ref[:64])} — {escape_html(str(e))}")
+            continue
+
+        if any(r["id"] == item["id"] for r in resolved):
+            errors.append(f"{escape_html(ref[:64])} — указан дважды")
+            continue
+        resolved.append(item)
+
+    return resolved, errors
+
+
+def normalize_binding(entry) -> dict:
+    if isinstance(entry, dict):
+        return entry
+    if isinstance(entry, list):
+        return {"keyphrases": [str(phrase) for phrase in entry]}
+    return {}
+
+
+def binding_items(entry) -> list[dict]:
+    items = normalize_binding(entry).get("items")
+    if not isinstance(items, list):
+        return []
+    return [bound for bound in items if isinstance(bound, dict)]
+
+
+def binding_phrases(entry) -> list[str]:
+    phrases = normalize_binding(entry).get("keyphrases")
+    if not isinstance(phrases, list):
+        return []
+    return [str(phrase) for phrase in phrases if phrase]
+
+
+def item_matches_binding(item, entry) -> bool:
+    item_id = getattr(item, "id", None)
+    item_slug = getattr(item, "slug", None)
+    for bound in binding_items(entry):
+        if item_id and bound.get("id") == item_id:
+            return True
+        if item_slug and bound.get("slug") == item_slug:
+            return True
+
+    name = (getattr(item, "name", None) or "").lower()
+    if name:
+        for phrase in binding_phrases(entry):
+            if phrase.lower() in name:
+                return True
+    return False
+
+
+def item_matches_any_binding(item, entries: list) -> bool:
+    return any(item_matches_binding(item, entry) for entry in (entries or []))
+
+
+def collect_binding_ids(entries: list) -> set:
+    return {
+        bound.get("id")
+        for entry in (entries or [])
+        for bound in binding_items(entry)
+        if bound.get("id")
+    }
+
+
+def split_new_items(items: list[dict], entries: list) -> tuple[list[dict], list[str]]:
+    existing = collect_binding_ids(entries)
+    fresh, dupes = [], []
+
+    for item in items:
+        if item.get("id") in existing:
+            name = item.get("name") or item.get("slug") or item.get("id")
+            dupes.append(f"{escape_html(str(name))} — уже добавлен")
+            continue
+        fresh.append(item)
+        existing.add(item.get("id"))
+
+    return fresh, dupes
+
+
+def item_url(bound: dict) -> str | None:
+    slug = (bound or {}).get("slug")
+    if not slug:
+        return None
+    # slug бывает кириллическим — в кнопку-ссылку такой URL нужно отдавать закодированным
+    return f"https://playerok.com/products/{quote(str(slug), safe='')}"
+
+
+def binding_links(entry, empty: str = "❌ Не указано") -> str:
+    parts = []
+    for bound in binding_items(entry):
+        name = str(bound.get("name") or bound.get("slug") or bound.get("id") or "").strip()
+        if not name:
+            continue
+        url = item_url(bound)
+        parts.append(f'<a href="{url}">{escape_html(name)}</a>' if url else escape_html(name))
+    if parts:
+        return ", ".join(parts)
+
+    phrases = binding_phrases(entry)
+    if phrases:
+        return "🔑 " + escape_html(", ".join(phrases))
+    return empty
+
+
+def binding_single_url(entry) -> str | None:
+    items = binding_items(entry)
+    if len(items) != 1:
+        return None
+    return item_url(items[0])
+
+
+def binding_key(entry) -> tuple:
+    entry = normalize_binding(entry)
+    ids = tuple(sorted(
+        str(bound.get("id") or bound.get("slug") or "")
+        for bound in binding_items(entry)
+    ))
+    phrases = tuple(sorted(phrase.lower() for phrase in binding_phrases(entry)))
+    return ids, phrases
+
+
+def binding_title(entry, empty: str = "❌ Не указано") -> str:
+    names = [
+        (bound.get("name") or bound.get("slug") or bound.get("id") or "").strip()
+        for bound in binding_items(entry)
+    ]
+    names = [name for name in names if name]
+    if names:
+        return ", ".join(names)
+
+    phrases = binding_phrases(entry)
+    if phrases:
+        return "🔑 " + ", ".join(phrases)
+    return empty
+
+
+def _rebind_in_obj(obj, old_id: str, new: dict) -> int:
+    changed = 0
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key == "item_id" and value == old_id and new.get("id"):
+                obj[key] = new["id"]
+                changed += 1
+                continue
+            if key == "items" and isinstance(value, list):
+                # список items бывает и списком привязок (аккаунты autosteamoffline),
+                # поэтому не-товары обходим дальше вглубь
+                for bound in value:
+                    if isinstance(bound, dict) and bound.get("id") == old_id:
+                        bound.update(new)
+                        changed += 1
+                        continue
+                    changed += _rebind_in_obj(bound, old_id, new)
+                continue
+            changed += _rebind_in_obj(value, old_id, new)
+    elif isinstance(obj, list):
+        for value in obj:
+            changed += _rebind_in_obj(value, old_id, new)
+    return changed
+
+
+def rebind_item(old_id: str, new: dict) -> int:
+    new_id = (new or {}).get("id")
+    if not old_id or not new_id or old_id == new_id:
+        return 0
+
+    payload = {"id": new_id}
+    if new.get("slug"):
+        payload["slug"] = new["slug"]
+    if new.get("name"):
+        payload["name"] = new["name"]
+    changed = 0
+
+    for name in BINDING_SETTINGS:
+        try:
+            settings = sett.get(name)
+            if settings is None:
+                continue
+            cnt = _rebind_in_obj(settings, old_id, payload)
+            if cnt:
+                sett.set(name, settings)
+                changed += cnt
+        except Exception as e:
+            logger.error(
+                f"{Fore.LIGHTRED_EX}Не удалось перепривязать товар в настройке "
+                f"{Fore.WHITE}{name}{Fore.LIGHTRED_EX}: {Fore.WHITE}{e}"
+            )
+
+    root = os.path.dirname(os.path.abspath(__file__))
+    for modules_dir in MODULES_DIRS:
+        pattern = os.path.join(root, modules_dir, "*", "module_settings", "*.json")
+        for path in glob.glob(pattern):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    settings = json.load(f)
+            except Exception:
+                continue
+
+            try:
+                cnt = _rebind_in_obj(settings, old_id, payload)
+                if not cnt:
+                    continue
+                set_json(path, settings)
+                changed += cnt
+            except Exception as e:
+                logger.error(
+                    f"{Fore.LIGHTRED_EX}Не удалось перепривязать товар в {Fore.WHITE}{path}"
+                    f"{Fore.LIGHTRED_EX}: {Fore.WHITE}{e}"
+                )
+
+    return changed
+
+
+
+def configure_config():
+    config = sett.get("config")
+
+    needs_setup = (
+        not config["playerok"]["api"]["cookies"] or
+        not config["telegram"]["api"]["token"] or
+        not config["telegram"]["bot"]["password"]
+    )
+
+    if needs_setup and not sys.stdin.isatty():
+        print(
+            f"\n{Fore.YELLOW}⚠️  Бот не настроен!"
+            f"\n{Fore.WHITE}Подключитесь к серверу и выполните команду:"
+            f"\n\n   {Fore.CYAN}pluniversal setup"
+            f"\n\n{Fore.WHITE}Это запустит интерактивную настройку прямо в терминале.\n"
+        )
+        sys.exit(0)
+
+    while not config["playerok"]["api"]["cookies"] :
+        while not config["playerok"]["api"]["cookies"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Введите {Fore.YELLOW}Cookie-Данные {Fore.LIGHTYELLOW_EX}├──────────────────────┐{Fore.WHITE}"
+                f"\n\n  Авторизуйтесь в свой аккаунт на Playerok, а после скопируйте куки с помощью расширения Cookie-Editor"
+                f"\n  (ЛКМ на расширение → Export → Header String)"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}__ddg3=4L7yBmrBwMwKm15X;token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+            )
+            str_cookies = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+            cookies = {
+                c.split("=")[0].strip(): c.split("=")[1].strip() for c
+                in str_cookies.split(";") if c.strip() and "=" in c
+            }
+            
+            if is_cookies_valid(str_cookies) and is_token_valid(cookies["token"]):
+                config["playerok"]["api"]["cookies"] = str_cookies
+                sett.set("config", config)
+                print(f"\n{Fore.YELLOW}Cookie-данные успешно сохранены в конфиг.")
+            else:
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректные Cookie-данные. "
+                    f"Убедитесь, что они соответствует формату и попробуйте ещё раз."
+                )
+
+        while not config["playerok"]["api"]["user_agent"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Введите {Fore.LIGHTMAGENTA_EX}Юзер-агент {Fore.LIGHTYELLOW_EX}├──────────────────────┐{Fore.WHITE}"
+                f"\n\n  Его можно скопировать на сайте https://whatmyuseragent.com"
+                f"\n  {Fore.LIGHTWHITE_EX}Или пропустите эту настройку, нажав Enter"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36..."
+            )
+            user_agent = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+            
+            if not user_agent:
+                print(f"\n{Fore.WHITE}Вы пропустили ввод Юзер-агента.")
+                break
+            if is_user_agent_valid(user_agent):
+                config["playerok"]["api"]["user_agent"] = user_agent
+                sett.set("config", config)
+                print(f"\n{Fore.YELLOW}Юзер-агент успешно сохранён в конфиг.")
+            else:
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректный Юзер-агент. "
+                    f"Убедитесь, что в нём нет русских символов и попробуйте ещё раз."
+                )
+        
+        while not config["playerok"]["api"]["proxy"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Введите {Fore.LIGHTBLUE_EX}HTTP прокси {Fore.LIGHTYELLOW_EX}для Playerok ├──────────────────────┐{Fore.WHITE}"
+                f"\n\n  Формат: user:password@ip:port, ip:port:user:password или ip:port"
+                f"\n  {Fore.LIGHTWHITE_EX}Или пропустите эту настройку, нажав Enter"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}DRjcQTm3Yc:m8GnUN8Q9L@46.161.30.187:8000"
+            )
+            proxy = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+
+            if proxy.count(":") == 3:
+                ip, port, user, passwd = proxy.split(":")
+                proxy = f"{user}:{passwd}@{ip}:{port}"
+            
+            if not proxy:
+                print(f"\n{Fore.WHITE}Вы пропустили ввод прокси.")
+                break
+            if is_proxy_valid(proxy):
+                config["playerok"]["api"]["proxy"] = proxy
+                sett.set("config", config)
+                print(f"\n{Fore.YELLOW}Прокси успешно сохранён в конфиг.")
+            else:
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректный Прокси. "
+                    f"Убедитесь, что он соответствует формату и попробуйте ещё раз."
+                )
+
+    while not config["telegram"]["api"]["token"]:
+        while not config["telegram"]["api"]["token"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Введите {Fore.CYAN}Токен Telegram бота {Fore.LIGHTYELLOW_EX}├──────────────────────┐{Fore.WHITE}"
+                f"\n\n  {Fore.WHITE}Бота нужно создать у @BotFather (https://t.me/BotFather)"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}7257913369:AAG2KjLL3-zvvfSQFSVhaTb4w7tR2iXsJXM"
+            )
+            token = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+            
+            if is_tg_token_valid(token):
+                config["telegram"]["api"]["token"] = token
+                sett.set("config", config)
+                print(f"\n{Fore.YELLOW}Токен Telegram бота успешно сохранён в конфиг.")
+            else:
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректный токен. "
+                    f"Убедитесь, что он соответствует формату и попробуйте ещё раз."
+                )
+                
+        while not config["telegram"]["api"]["custom_api_url"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ "
+                f"Введите {Fore.LIGHTGREEN_EX}Кастомный URL Telegram API "
+                f"{Fore.LIGHTYELLOW_EX}(опционально) ├────┐{Fore.WHITE}"
+                f"\n\n  Если Telegram заблокирован, можно указать URL Cloudflare Worker-прокси"
+                f"\n  (или другого reverse-proxy) вместо api.telegram.org"
+                f"\n  {Fore.LIGHTWHITE_EX}Или пропустите эту настройку, нажав Enter"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}"
+                f"https://tg-proxy.ваш-поддомен.workers.dev"
+            )
+            cust_api_url = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+
+            if not cust_api_url:
+                print(f"\n{Fore.WHITE}Вы пропустили ввод кастомного URL.")
+                break
+
+            cust_api_url = normalize_custom_api_url(cust_api_url)
+            if not is_url_valid(cust_api_url):
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректный URL. "
+                    f"Убедитесь, что он верный и попробуйте ещё раз."
+                )
+                continue
+
+            print(f"\n{Fore.WHITE}Проверяю URL, это займёт до 30 секунд...")
+            if not is_custom_api_url_working(cust_api_url):
+                print(
+                    f"\n{Fore.LIGHTRED_EX}URL не ответил на проверочный запрос. "
+                    f"Либо он указан неверно, либо сервер недоступен, либо неверен токен бота."
+                    f"\n{Fore.WHITE}  Если сохранить такой URL, бот не сможет связаться с Telegram."
+                    f"\n  {Fore.LIGHTWHITE_EX}Введите y, чтобы сохранить всё равно, или Enter, чтобы ввести другой"
+                )
+                if input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip().lower() not in ("y", "yes", "д", "да"):
+                    continue
+
+            config["telegram"]["api"]["custom_api_url"] = cust_api_url
+            sett.set("config", config)
+            print(f"\n{Fore.YELLOW}Кастомный URL успешно сохранён в конфиг.")
+
+        while not config["telegram"]["api"]["proxy"]:
+            print(
+                f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Введите {Fore.LIGHTBLUE_EX}HTTP прокси {Fore.LIGHTYELLOW_EX}для Telegram ├──────────────────────┐{Fore.WHITE}"
+                f"\n\n  Формат: user:password@ip:port, ip:port:user:password или ip:port"
+                f"\n  {Fore.LIGHTWHITE_EX}Или пропустите эту настройку, нажав Enter"
+                f"\n\n  {Fore.LIGHTWHITE_EX}· Пример: {Fore.WHITE}DRjcQTm3Yc:m8GnUN8Q9L@46.161.30.187:8000"
+            )
+            proxy = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+
+            if proxy.count(":") == 3:
+                ip, port, user, passwd = proxy.split(":")
+                proxy = f"{user}:{passwd}@{ip}:{port}"
+            
+            if not proxy:
+                print(f"\n{Fore.WHITE}Вы пропустили ввод прокси.")
+                break
+
+            if is_proxy_valid(proxy):
+                config["telegram"]["api"]["proxy"] = proxy
+                sett.set("config", config)
+                print(f"\n{Fore.YELLOW}Прокси успешно сохранён в конфиг.")
+            else:
+                print(
+                    f"\n{Fore.LIGHTRED_EX}Похоже, что вы ввели некорректный прокси. "
+                    f"Убедитесь, что он соответствует формату и попробуйте ещё раз."
+                )
+
+    while not config["telegram"]["bot"]["password"]:
+        print(
+            f"\n{Fore.LIGHTYELLOW_EX}┌────┤ Придумайте {Fore.YELLOW}Пароль для Telegram бота {Fore.LIGHTYELLOW_EX}├──────────────────────┐{Fore.WHITE}"
+            f"\n\n  Бот будет запрашивать его при каждой новой попытке взаимодействия чужого пользователя"
+            f"\n\n  {Fore.LIGHTWHITE_EX}· Важно: {Fore.WHITE}Пароль должен быть сложным, длиной не менее 6 и не более 64 символов"
+        )
+        password = input(f"  {Fore.WHITE}→ {Fore.LIGHTWHITE_EX}").strip()
+        
+        if is_password_valid(password):
+            config["telegram"]["bot"]["password"] = password
+            sett.set("config", config)
+            print(f"\n{Fore.YELLOW}Пароль успешно сохранён в конфиг.")
+        else:
+            print(f"\n{Fore.LIGHTRED_EX}Ваш пароль не подходит. Убедитесь, что он соответствует формату и не является лёгким и попробуйте ещё раз.")
+    
+    logger.info("")
+    
+    if config["playerok"]["api"]["proxy"] and not is_proxy_working(config["playerok"]["api"]["proxy"]):
+        print(
+            f"\n{Fore.LIGHTRED_EX}Похоже, что прокси для Playerok аккаунта не работает. "
+            f"Пожалуйста, проверьте его и введите снова."
+        )
+        
+        config["playerok"]["api"]["cookies"] = ""
+        config["playerok"]["api"]["user_agent"] = ""
+        config["playerok"]["api"]["proxy"] = ""
+        sett.set("config", config)
+        
+        return configure_config()
+    elif config["playerok"]["api"]["proxy"]:
+        logger.info(f"{Fore.LIGHTYELLOW_EX}Playerok прокси успешно работает.")
+
+    is_pl_acc_working, reason = is_pl_account_working()
+    if not is_pl_acc_working:
+        reason = reason if reason else "Не удалось подключиться к вашему Playerok аккаунту. Пожалуйста, убедитесь, что у вас указаны верные cookie-данные и введите их снова."
+        print(f"\n{Fore.LIGHTRED_EX}{reason}")
+        
+        config["playerok"]["api"]["cookies"] = ""
+        config["playerok"]["api"]["user_agent"] = ""
+        config["playerok"]["api"]["proxy"] = ""
+        sett.set("config", config)
+        
+        return configure_config()
+    else:
+        logger.info(f"{Fore.LIGHTYELLOW_EX}Playerok аккаунт успешно авторизован.")
+
+    if is_pl_account_banned():
+        print(
+            f"{Fore.LIGHTRED_EX}\nВаш Playerok аккаунт забанен! "
+            f"Увы, я не могу запустить бота на заблокированном аккаунте..."
+        )
+        
+        config["playerok"]["api"]["cookies"] = ""
+        config["playerok"]["api"]["user_agent"] = ""
+        config["playerok"]["api"]["proxy"] = ""
+        sett.set("config", config)
+        
+        return configure_config()
+
+    if config["telegram"]["api"]["proxy"] and not is_proxy_working(
+        config["telegram"]["api"]["proxy"], 
+        "https://api.telegram.org/"
+    ):
+        print(
+            f"{Fore.LIGHTRED_EX}\nПохоже, что прокси для Telegram бота не работает. "
+            f"Пожалуйста, проверьте его и введите снова."
+        )
+        # не затираем token/proxy: краткий сетевой сбой иначе ломает следующий старт
+        logger.error("Telegram proxy недоступен — настройки сохранены, Playerok продолжит работу")
+        return
+    elif config["telegram"]["api"]["proxy"]:
+        logger.info(f"{Fore.LIGHTYELLOW_EX}Telegram прокси успешно работает.")
+
+    tg_ok = False
+    for _ in range(2):
+        if is_tg_bot_exists():
+            tg_ok = True
+            break
+        time.sleep(1)
+
+    if not tg_ok:
+        print(
+            f"{Fore.LIGHTRED_EX}\nНе удалось подключиться к вашему Telegram боту. "
+            f"Если вы находитесь на территории России, вам нужно подключить прокси к Telegram боту или использовать VPN, в виду блокировок со стороны РКН."
+        )
+        # раньше тут затирали token + custom_api_url — из‑за этого рестарт без VPN
+        # убивал TG-настройки и требовал ввод токена вручную
+        logger.error(
+            "Telegram недоступен (custom_api_url/VPN). "
+            "Токен и proxy не трогаю. Playerok-часть запущу без TG-уведомлений."
+        )
+        return
+    else:
+        logger.info(f"{Fore.LIGHTYELLOW_EX}Telegram бот успешно работает.")
+
+
+def get_stats():
+    cached_orders = data.get("cached_orders")
+
+    now = datetime.now(pytz.timezone("Europe/Moscow"))
+    day_ago = now - timedelta(days=1)
+    week_ago = now - timedelta(days=7)
+    month_ago = now - timedelta(days=30)
+
+    day_orders = [o for o in cached_orders.values() if datetime.fromisoformat(o["date"]) >= day_ago]
+    week_orders = [o for o in cached_orders.values() if datetime.fromisoformat(o["date"]) >= week_ago]
+    month_orders = [o for o in cached_orders.values() if datetime.fromisoformat(o["date"]) >= month_ago]
+    all_orders = list(cached_orders.values())
+
+    day_active = [o for o in day_orders if not o["status"].startswith("CONFIRMED") and not o["status"].startswith("ROLLED_BACK")]
+    week_active = [o for o in week_orders if not o["status"].startswith("CONFIRMED") and not o["status"].startswith("ROLLED_BACK")]
+    month_active = [o for o in month_orders if not o["status"].startswith("CONFIRMED") and not o["status"].startswith("ROLLED_BACK")]
+    all_active = [o for o in all_orders if not o["status"].startswith("CONFIRMED") and not o["status"].startswith("ROLLED_BACK")]
+
+    day_completed = [o for o in day_orders if o["status"].startswith("CONFIRMED")]
+    week_completed = [o for o in week_orders if o["status"].startswith("CONFIRMED")]
+    month_completed = [o for o in month_orders if o["status"].startswith("CONFIRMED")]
+    all_completed = [o for o in all_orders if o["status"].startswith("CONFIRMED")]
+
+    day_refunded = [o for o in day_orders if o["status"].startswith("ROLLED_BACK")]
+    week_refunded = [o for o in week_orders if o["status"].startswith("ROLLED_BACK")]
+    month_refunded = [o for o in month_orders if o["status"].startswith("ROLLED_BACK")]
+    all_refunded = [o for o in all_orders if o["status"].startswith("ROLLED_BACK")]
+
+    day_profit = round(sum(o["price"] for o in day_orders if o["status"].startswith("CONFIRMED")), 2)
+    week_profit = round(sum(o["price"] for o in week_orders if o["status"].startswith("CONFIRMED")), 2)
+    month_profit = round(sum(o["price"] for o in month_orders if o["status"].startswith("CONFIRMED")), 2)
+    all_profit = round(sum(o["price"] for o in all_orders if o["status"].startswith("CONFIRMED")), 2)
+
+    day_best = Counter(o["item_name"] for o in day_orders).most_common(1)[0][0] if day_orders else "-"
+    week_best = Counter(o["item_name"] for o in week_orders).most_common(1)[0][0] if day_orders else "-"
+    month_best = Counter(o["item_name"] for o in month_orders).most_common(1)[0][0] if day_orders else "-"
+    all_best = Counter(o["item_name"] for o in all_orders).most_common(1)[0][0] if day_orders else "-"
+
+    return {
+        "day": {
+            "orders": len(day_orders),
+            "active": len(day_active),
+            "completed": len(day_completed),
+            "refunded": len(day_refunded),
+            "profit": day_profit,
+            "best": day_best
+        },
+        "week": {
+            "orders": len(week_orders),
+            "active": len(week_active),
+            "completed": len(week_completed),
+            "refunded": len(week_refunded),
+            "profit": week_profit,
+            "best": week_best
+        },
+        "month": {
+            "orders": len(month_orders),
+            "active": len(month_active),
+            "completed": len(month_completed),
+            "refunded": len(month_refunded),
+            "profit": month_profit,
+            "best": month_best
+        },
+        "all": {
+            "orders": len(all_orders),
+            "active": len(all_active),
+            "completed": len(all_completed),
+            "refunded": len(all_refunded),
+            "profit": all_profit,
+            "best": all_best
+        }
+    }

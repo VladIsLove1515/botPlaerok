@@ -1,0 +1,73 @@
+{
+    "items": [
+        {
+            "id": "4bdb3848-89fa-4b01-9b29-24c3d7c5798d",
+            "enabled": true,
+            "title": "Новое приветствие",
+            "text": [
+                "Здравствуйте, {user.username}!",
+                "",
+                "Спасибо за покупку «{item.name}». ",
+                "",
+                "Ваш заказ в обработке. При большом объеме бустов от 6шт. системе нужно больше времени на исполнение. Прошу вас подождать, обычно бусты приходят втечение часа. Спасибо за ваше понимание!"
+            ],
+            "lots": [
+                {
+                    "id": "1f1d75f2-92bb-6030-a7c3-0e453f716b9c",
+                    "slug": "0e453f716b9c-120-bustov-telegrambystryy-boost",
+                    "name": "🚀120 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "id": "1f1d7659-6c9c-63b0-af01-2dd13e42ad66",
+                    "slug": "2dd13e42ad66-15-bustov-telegrambystryy-boost",
+                    "name": "🚀15 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "id": "1f1d7648-3a31-6300-241d-3bb58dc3808c",
+                    "slug": "3bb58dc3808c-25-bustov-telegrambystryy-boost",
+                    "name": "🚀25 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "id": "1f1d7647-cedd-69a0-3c96-83cfd3830945",
+                    "slug": "83cfd3830945-35-bustov-telegrambystryy-boost",
+                    "name": "🚀35 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "id": "1f1d7647-5cda-6970-341d-5481a6cbf947",
+                    "slug": "5481a6cbf947-60-bustov-telegrambystryy-boost",
+                    "name": "🚀60 Бустов Telegram🚀Быстрый BOOST🚀"
+                }
+            ]
+        },
+        {
+            "id": "840d05a5-ad83-4aaf-bf4e-c9345b9dd774",
+            "enabled": true,
+            "title": "Новое приветствие",
+            "text": [
+                "Здравствуйте, {user.username}!",
+                "",
+                "Спасибо за покупку «{item.name}». ",
+                "",
+                "Данные пришли вам автоматически, проверьте и отпишите если будут вопросы. После проверки оставьте отзыв, если вам не сложно.",
+                "Если при заказе возникла ошибка, напишите команду !ошибка — разберёмся и ответим в этом чате."
+            ],
+            "lots": [
+                {
+                    "id": "1f1d38d7-cf3f-6bd0-3592-273869372271",
+                    "slug": "273869372271-kazahstan-chistyy-akkaunt-avtovydacha-rodnaya-pochta",
+                    "name": "🟦 КАЗАХСТАН|ЧИСТЫЙ АККАУНТ💛 [💙АВТОВЫДАЧА💛][РОДНАЯ ПОЧТА]"
+                },
+                {
+                    "id": "1f1d439f-e172-64b0-35b9-ea8977777a68",
+                    "slug": "ea8977777a68-kazahstan-chistyy-akkaunt-avtovydacha-rodnaya-pochta",
+                    "name": "🟦 КАЗАХСТАН|ЧИСТЫЙ АККАУНТ💛 [💙АВТОВЫДАЧА💛][РОДНАЯ ПОЧТА]"
+                },
+                {
+                    "id": "1f1d5fc1-5f0e-6620-fc50-3bc35314d4fa",
+                    "slug": "3bc35314d4fa-bez-pasporta-voys-chat-avtovydacha",
+                    "name": "💙ГАЙД💙БУСТ ФПС💙АВТОВЫДАЧА💙"
+                }
+            ]
+        }
+    ]
+}

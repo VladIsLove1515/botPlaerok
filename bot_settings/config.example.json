@@ -1,0 +1,98 @@
+{
+    "playerok": {
+        "api": {
+            "cookies": "",
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 YaBrowser/26.10.0.0 Safari/537.36",
+            "proxy": "",
+            "requests_timeout": 30
+        },
+        "watermark": {
+            "enabled": false,
+            "value": "©️ 𝗣𝗹𝗮𝘆𝗲𝗿𝗼𝗸 𝗨𝗻𝗶𝘃𝗲𝗿𝘀𝗮𝗹"
+        },
+        "read_chat": true,
+        "auto_restore_items": {
+            "sold": true,
+            "expired": false,
+            "all": true,
+            "free": true,
+            "premium": true,
+            "publish_status": "last",
+            "recreate": false
+        },
+        "auto_complete_deals": {
+            "enabled": true,
+            "all": false
+        },
+        "auto_bump_items": {
+            "enabled": false,
+            "mode": "interval",
+            "interval": 3600,
+            "position": 80,
+            "cooldown": 7200,
+            "check_interval": 30,
+            "all": false,
+            "pay_to_raise": true,
+            "max_pay_price": 50,
+            "last_time": "2026-11-03T12:27:14",
+            "last_check_time": "2026-11-01T03:28:24.211490",
+            "night": {
+                "enabled": true,
+                "interval": 86400,
+                "position": 25,
+                "time_from": "00:00",
+                "time_to": "12:00"
+            }
+        },
+        "auto_snipe": {
+            "enabled": true,
+            "delay_seconds": 60,
+            "check_interval": 60,
+            "max_pay_price": 53,
+            "last_check_time": "2026-11-03T15:51:32.768785"
+        },
+        "auto_withdrawal": {
+            "enabled": false,
+            "interval": 86400,
+            "last_time": "",
+            "credentials_type": "",
+            "card_id": "",
+            "sbp_bank_id": "",
+            "sbp_phone_number": "",
+            "usdt_address": ""
+        },
+        "notifications": {
+            "enabled": true,
+            "chat_id": "",
+            "events": {
+                "new_user_message": true,
+                "new_system_message": true,
+                "new_deal": true,
+                "new_review": true,
+                "new_problem": true,
+                "deal_status_changed": true,
+                "item_restored": true,
+                "item_bumped": true,
+                "withdrawal_requested": true
+            }
+        }
+    },
+    "telegram": {
+        "api": {
+            "token": "",
+            "proxy": "",
+            "custom_api_url": "https://tg-proxy.vladtkach15.workers.dev"
+        },
+        "bot": {
+            "password": "",
+            "signed_users": []
+        }
+    },
+    "updates": {
+        "auto_update": false,
+        "notify": true
+    },
+    "logs": {
+        "max_file_size": 512
+    }
+}

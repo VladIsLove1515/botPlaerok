@@ -1,0 +1,45 @@
+{
+    "sellers": [
+        {
+            "username": "Iama shop",
+            "user_id": "01a04c68-27ef-7544-9060-cf4eec593956",
+            "links": [
+                {
+                    "competitor_item_id": "1f1d009a-14c2-60c0-be82-56b96182c451",
+                    "competitor_slug": "56b96182c451-100-bustov-telegram-momentalno",
+                    "competitor_name": "⚡100 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+                    "my_item_id": "1f1d75f2-92bb-6030-a7c3-0e453f716b9c",
+                    "my_name": "🚀120 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "competitor_item_id": "1f1b79b2-ce27-6ad0-1c62-64a5a2116e9a",
+                    "competitor_slug": "64a5a2116e9a-50-bustov-telegram-momentalno",
+                    "competitor_name": "⚡50 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+                    "my_item_id": "1f1d7647-5cda-6970-341d-5481a6cbf947",
+                    "my_name": "🚀60 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "competitor_item_id": "1f1bebba-aa83-6c30-dcd5-a2abbb399fc4",
+                    "competitor_slug": "a2abbb399fc4-30-5-bonus-bustov-telegram-momentalno",
+                    "competitor_name": "⚡30 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+                    "my_item_id": "1f1d7647-cedd-69a0-3c96-83cfd3830945",
+                    "my_name": "🚀35 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "competitor_item_id": "1f1b547f-88b7-62f0-20be-0fb47d03474a",
+                    "competitor_slug": "0fb47d03474a-20-bustov-telegram-momentalno",
+                    "competitor_name": "⚡20 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+                    "my_item_id": "1f1d7648-3a31-6300-241d-3bb58dc3808c",
+                    "my_name": "🚀25 Бустов Telegram🚀Быстрый BOOST🚀"
+                },
+                {
+                    "competitor_item_id": "1f1b546a-3a03-6600-c14b-41663efe938e",
+                    "competitor_slug": "41663efe938e-10-bustov-telegram-momentalno",
+                    "competitor_name": "⚡10 БУСТОВ TELEGRAM | МОМЕНТАЛЬНО🚀",
+                    "my_item_id": "1f1d7659-6c9c-63b0-af01-2dd13e42ad66",
+                    "my_name": "🚀15 Бустов Telegram🚀Быстрый BOOST🚀"
+                }
+            ]
+        }
+    ]
+}

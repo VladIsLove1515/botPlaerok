@@ -1,0 +1,26 @@
+# venv / deps
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+dist/
+build/
+
+# runtime / local
+logs/
+*.log
+bot_data/.instance.lock
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+.cursor/
+
+# secrets / local credentials (never commit)
+bot_settings/config.json
+bot_settings/account_stock.json
